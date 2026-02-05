@@ -112,7 +112,8 @@ export class BaileysConnection {
     this.isReconnect = !!options.isReconnect;
     // TODO(v2): Change default to false.
     this.includeMedia = options.includeMedia ?? true;
-    this.syncFullHistory = options.syncFullHistory ?? true;
+    // NOTE: Always sync full history regardless of request options.
+    this.syncFullHistory = true;
   }
 
   // biome-ignore lint/suspicious/noExplicitAny: Typing this wrapper is not trivial.
@@ -139,7 +140,8 @@ export class BaileysConnection {
     this.webhookUrl = options.webhookUrl;
     this.webhookVerifyToken = options.webhookVerifyToken;
     this.includeMedia = options.includeMedia ?? true;
-    this.syncFullHistory = options.syncFullHistory ?? false;
+    // NOTE: Always sync full history regardless of request options.
+    this.syncFullHistory = true;
   }
 
   async connect() {

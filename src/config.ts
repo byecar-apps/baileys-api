@@ -42,11 +42,8 @@ const config = {
     clientVersion: BAILEYS_CLIENT_VERSION || "default",
     overrideClientVersion: BAILEYS_OVERRIDE_CLIENT_VERSION === "true",
     syncFullHistory: BAILEYS_SYNC_FULL_HISTORY === "true",
-    // FIXME: We ignore any non-user messages for now. As we implement more features,
-    // we can enable them as needed.
-    ignoreGroupMessages: IGNORE_GROUP_MESSAGES
-      ? IGNORE_GROUP_MESSAGES === "true"
-      : true,
+    // NOTE: Group messages are enabled by default.
+    ignoreGroupMessages: IGNORE_GROUP_MESSAGES === "false",
     ignoreStatusMessages: IGNORE_STATUS_MESSAGES
       ? IGNORE_STATUS_MESSAGES === "true"
       : true,

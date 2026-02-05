@@ -1,0 +1,96 @@
+import type { LevelWithSilentOrString } from "pino";
+import packageInfo from "@/../package.json";
+
+const {
+  NODE_ENV,
+  PORT,
+  LOG_LEVEL,
+  BAILEYS_LOG_LEVEL,
+  BAILEYS_CLIENT_VERSION,
+  BAILEYS_OVERRIDE_CLIENT_VERSION,
+  BAILEYS_SYNC_FULL_HISTORY,
+  REDIS_URL,
+  REDIS_PASSWORD,
+  WEBHOOK_RETRY_POLICY_MAX_RETRIES,
+  WEBHOOK_RETRY_POLICY_RETRY_INTERVAL,
+  WEBHOOK_RETRY_POLICY_BACKOFF_FACTOR,
+  CORS_ORIGIN,
+  IGNORE_GROUP_MESSAGES,
+  IGNORE_STATUS_MESSAGES,
+  IGNORE_BROADCAST_MESSAGES,
+  IGNORE_NEWSLETTER_MESSAGES,
+  IGNORE_BOT_MESSAGES,
+  IGNORE_META_AI_MESSAGES,
+  MEDIA_CLEANUP_ENABLED,
+  MEDIA_CLEANUP_INTERVAL_MS,
+  MEDIA_MAX_AGE_HOURS,
+  BAILEYS_LISTEN_TO_EVENTS,
+} = process.env;
+
+const config = {
+  packageInfo: {
+    name: packageInfo.name,
+    version: packageInfo.version,
+    description: packageInfo.description,
+    repository: packageInfo.repository,
+  },
+  port: PORT ? Number(PORT) : 3025,
+  env: (NODE_ENV || "development") as "development" | "production",
+  logLevel: (LOG_LEVEL || "info") as LevelWithSilentOrString,
+  baileys: {
+    logLevel: (BAILEYS_LOG_LEVEL || "warn") as LevelWithSilentOrString,
+    clientVersion: BAILEYS_CLIENT_VERSION || "default",
+    overrideClientVersion: BAILEYS_OVERRIDE_CLIENT_VERSION === "true",
+    syncFullHistory: BAILEYS_SYNC_FULL_HISTORY === "true",
+    // FIXME: We ignore any non-user messages for now. As we implement more features,
+    // we can enable them as needed.
+    ignoreGroupMessages: IGNORE_GROUP_MESSAGES
+      ? IGNORE_GROUP_MESSAGES === "true"
+      : true,
+    ignoreStatusMessages: IGNORE_STATUS_MESSAGES
+      ? IGNORE_STATUS_MESSAGES === "true"
+      : true,
+    ignoreBroadcastMessages: IGNORE_BROADCAST_MESSAGES
+      ? IGNORE_BROADCAST_MESSAGES === "true"
+      : true,
+    ignoreNewsletterMessages: IGNORE_NEWSLETTER_MESSAGES
+      ? IGNORE_NEWSLETTER_MESSAGES === "true"
+      : true,
+    ignoreBotMessages: IGNORE_BOT_MESSAGES
+      ? IGNORE_BOT_MESSAGES === "true"
+      : true,
+    ignoreMetaAiMessages: IGNORE_META_AI_MESSAGES
+      ? IGNORE_META_AI_MESSAGES === "true"
+      : true,
+    listenToEvents: new Set(
+      BAILEYS_LISTEN_TO_EVENTS
+        ? BAILEYS_LISTEN_TO_EVENTS.split(",").map((e) => e.trim())
+        : [],
+    ),
+  },
+  redis: {
+    url: REDIS_URL || "redis://localhost:6379",
+    password: REDIS_PASSWORD || "",
+  },
+  webhook: {
+    retryPolicy: {
+      maxRetries: WEBHOOK_RETRY_POLICY_MAX_RETRIES
+        ? Number(WEBHOOK_RETRY_POLICY_MAX_RETRIES)
+        : 3,
+      retryInterval: WEBHOOK_RETRY_POLICY_RETRY_INTERVAL
+        ? Number(WEBHOOK_RETRY_POLICY_RETRY_INTERVAL)
+        : 5000,
+      backoffFactor: WEBHOOK_RETRY_POLICY_BACKOFF_FACTOR
+        ? Number(WEBHOOK_RETRY_POLICY_BACKOFF_FACTOR)
+        : 3,
+    },
+  },
+  corsOrigin: CORS_ORIGIN || "localhost",
+  media: {
+    cleanupEnabled: MEDIA_CLEANUP_ENABLED === "true",
+    cleanupIntervalMs: Number(MEDIA_CLEANUP_INTERVAL_MS) || 60 * 60 * 1000, // 1 hour
+    maxAgeHours: Number(MEDIA_MAX_AGE_HOURS) || 24, // 24 hours
+  },
+};
+
+export default config;

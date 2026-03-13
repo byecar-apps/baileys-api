@@ -486,6 +486,7 @@ export class BaileysConnection {
       }
 
       await this.close();
+      this.sendToWebhook({ event: "connection.update", data });
       return;
     }
 

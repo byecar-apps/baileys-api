@@ -607,12 +607,17 @@ export class BaileysConnection {
       awaitResponse?: boolean;
     },
   ) {
-    if (
+    const data = payload.data as {
+      connection?: string;
+      lastDisconnect?: unknown;
+    };
+    const isConnectionClose =
       payload.event === "connection.update" &&
-      (payload.data as { connection?: string })?.connection === "close"
-    ) {
+      (data?.connection === "close" || data?.lastDisconnect != null);
+
+    if (isConnectionClose) {
       logger.info(
-        "[%s] [sendToWebhook] connection=close detected, notifying Slack",
+        "[%s] [sendToWebhook] connection.close/lastDisconnect detected, notifying Slack",
         this.phoneNumber,
       );
       await notifySlackDisconnectionHelper(this.phoneNumber, "disconnected");

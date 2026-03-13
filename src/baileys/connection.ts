@@ -450,29 +450,28 @@ export class BaileysConnection {
       const statusCode = error?.output?.statusCode;
       const message = error?.output?.payload?.message || error?.message;
 
-      logger.info(
-        "[%s] [handleConnectionUpdate] Connection closed - raw error: %o",
-        this.phoneNumber,
-        lastDisconnect,
-      );
-
       const isLoggedOut = statusCode === DisconnectReason.loggedOut;
       const isQrExpired = message === "QR refs attempts ended";
       const isDeviceRemoved = statusCode === 401;
-      // NOTE: If we can't determine the status code, don't reconnect (assume permanent disconnection)
+      // NOTE: If we can't determine the status code (e.g. error serialized empty), treat as permanent disconnect
       const shouldReconnect =
         statusCode !== undefined &&
         !isLoggedOut &&
         !isQrExpired &&
         !isDeviceRemoved;
 
-      logger.info(
-        "[%s] [handleConnectionUpdate] Connection closed (statusCode=%s, message=%s, shouldReconnect=%s)",
-        this.phoneNumber,
-        statusCode,
-        message,
-        shouldReconnect,
-      );
+      const disconnectReason = isLoggedOut
+        ? "logout"
+        : isQrExpired
+          ? "qr_expired"
+          : isDeviceRemoved
+            ? "device_removed"
+            : statusCode === undefined
+              ? "disconnected"
+              : `unknown (${statusCode}: ${message})`;
+
+      // Notify Slack first, before any await that could fail or before return
+      await this.notifySlackDisconnection(disconnectReason);
 
       if (shouldReconnect) {
         logger.debug(
@@ -481,30 +480,13 @@ export class BaileysConnection {
           lastDisconnect ?? {},
         );
         await this.handleReconnecting();
-        // NOTE: We don't call `this.close()` here because we want to keep the auth state.
         this.socket = null;
         this.connect();
         return;
       }
 
-      const disconnectReason = isLoggedOut
-        ? "logout"
-        : isQrExpired
-          ? "qr_expired"
-          : isDeviceRemoved
-            ? "device_removed"
-            : `unknown (${statusCode}: ${message})`;
-      logger.info(
-        "[%s] [handleConnectionUpdate] Will notify Slack with reason: %s",
-        this.phoneNumber,
-        disconnectReason,
-      );
-      await this.notifySlackDisconnection(disconnectReason);
-      logger.info(
-        "[%s] [handleConnectionUpdate] Slack notification done, closing connection",
-        this.phoneNumber,
-      );
       await this.close();
+      return;
     }
 
     if (connection === "open" && this.socket?.user?.id) {

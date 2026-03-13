@@ -1,5 +1,9 @@
 import config from "@/config";
+import { asyncSleep } from "@/helpers/asyncSleep";
 import logger from "@/lib/logger";
+
+const SLACK_NOTIFY_MAX_RETRIES = 3;
+const SLACK_NOTIFY_RETRY_DELAY_MS = 2000;
 
 export async function notifySlackDisconnection(
   phoneNumber: string,
@@ -14,39 +18,63 @@ export async function notifySlackDisconnection(
     );
     return;
   }
-  try {
-    logger.info(
-      "[%s] [notifySlackDisconnection] Sending to Slack (reason: %s)",
-      phoneNumber,
-      reason,
-    );
-    const response = await fetch(slackWebhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: `🔴 WhatsApp desconectado: ${phoneNumber} (motivo: ${reason})`,
-      }),
-    });
-    const body = await response.text();
-    if (!response.ok) {
-      logger.error(
-        "[%s] [notifySlackDisconnection] Slack returned %s: %s",
+
+  const body = JSON.stringify({
+    text: `🔴 WhatsApp desconectado: ${phoneNumber} (motivo: ${reason})`,
+  });
+
+  for (let attempt = 1; attempt <= SLACK_NOTIFY_MAX_RETRIES; attempt++) {
+    try {
+      logger.info(
+        "[%s] [notifySlackDisconnection] Sending to Slack (reason: %s, attempt: %d/%d)",
         phoneNumber,
-        response.status,
+        reason,
+        attempt,
+        SLACK_NOTIFY_MAX_RETRIES,
+      );
+      const response = await fetch(slackWebhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body,
+      });
+      const responseBody = await response.text();
+      if (!response.ok) {
+        logger.error(
+          "[%s] [notifySlackDisconnection] Slack returned %s: %s (attempt %d/%d)",
+          phoneNumber,
+          response.status,
+          responseBody,
+          attempt,
+          SLACK_NOTIFY_MAX_RETRIES,
+        );
+        if (attempt < SLACK_NOTIFY_MAX_RETRIES) {
+          await asyncSleep(SLACK_NOTIFY_RETRY_DELAY_MS);
+        }
+        continue;
+      }
+      logger.info(
+        "[%s] [notifySlackDisconnection] Slack OK (reason: %s)",
+        phoneNumber,
+        reason,
       );
       return;
+    } catch (error) {
+      logger.error(
+        "[%s] [notifySlackDisconnection] Failed attempt %d/%d: %s",
+        phoneNumber,
+        attempt,
+        SLACK_NOTIFY_MAX_RETRIES,
+        error instanceof Error ? error.message : String(error),
+      );
+      if (attempt < SLACK_NOTIFY_MAX_RETRIES) {
+        await asyncSleep(SLACK_NOTIFY_RETRY_DELAY_MS);
+      }
     }
-    logger.info(
-      "[%s] [notifySlackDisconnection] Slack OK (reason: %s)",
-      phoneNumber,
-      reason,
-    );
-  } catch (error) {
-    logger.error(
-      "[%s] [notifySlackDisconnection] Failed: %s",
-      phoneNumber,
-      error instanceof Error ? error.message : String(error),
-    );
   }
+
+  logger.error(
+    "[%s] [notifySlackDisconnection] All %d attempts failed",
+    phoneNumber,
+    SLACK_NOTIFY_MAX_RETRIES,
+  );
 }

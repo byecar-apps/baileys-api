@@ -609,18 +609,24 @@ export class BaileysConnection {
   ) {
     const data = payload.data as {
       connection?: string;
-      lastDisconnect?: unknown;
+      lastDisconnect?: { error?: Record<string, unknown>; date?: string };
     };
     const isConnectionClose =
       payload.event === "connection.update" &&
       (data?.connection === "close" || data?.lastDisconnect != null);
 
     if (isConnectionClose) {
+      const lastError = data?.lastDisconnect?.error;
+      const isEmptyError =
+        lastError == null ||
+        (typeof lastError === "object" && Object.keys(lastError).length === 0);
+      const reason = isEmptyError ? "device_removed" : "disconnected";
       logger.info(
-        "[%s] [sendToWebhook] connection.close/lastDisconnect detected, notifying Slack",
+        "[%s] [sendToWebhook] connection.close/lastDisconnect detected, notifying Slack (reason: %s)",
         this.phoneNumber,
+        reason,
       );
-      await notifySlackDisconnectionHelper(this.phoneNumber, "disconnected");
+      await notifySlackDisconnectionHelper(this.phoneNumber, reason);
     }
 
     const sanitizedPayload = deepSanitizeObject(

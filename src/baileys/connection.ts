@@ -448,11 +448,23 @@ export class BaileysConnection {
       // TODO: Drop @hapi/boom dependency.
       const error = lastDisconnect?.error as Boom;
       const statusCode = error?.output?.statusCode;
-      const message = error?.output?.payload?.message || error.message;
+      const message = error?.output?.payload?.message || error?.message;
+
+      logger.info(
+        "[%s] [handleConnectionUpdate] Connection closed - raw error: %o",
+        this.phoneNumber,
+        lastDisconnect,
+      );
+
       const isLoggedOut = statusCode === DisconnectReason.loggedOut;
       const isQrExpired = message === "QR refs attempts ended";
       const isDeviceRemoved = statusCode === 401;
-      const shouldReconnect = !isLoggedOut && !isQrExpired && !isDeviceRemoved;
+      // NOTE: If we can't determine the status code, don't reconnect (assume permanent disconnection)
+      const shouldReconnect =
+        statusCode !== undefined &&
+        !isLoggedOut &&
+        !isQrExpired &&
+        !isDeviceRemoved;
 
       logger.info(
         "[%s] [handleConnectionUpdate] Connection closed (statusCode=%s, message=%s, shouldReconnect=%s)",

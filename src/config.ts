@@ -25,6 +25,7 @@ const {
   MEDIA_CLEANUP_INTERVAL_MS,
   MEDIA_MAX_AGE_HOURS,
   BAILEYS_LISTEN_TO_EVENTS,
+  SLACK_WEBHOOK_URL,
 } = process.env;
 
 const config = {
@@ -87,6 +88,9 @@ const config = {
     cleanupEnabled: MEDIA_CLEANUP_ENABLED === "true",
     cleanupIntervalMs: Number(MEDIA_CLEANUP_INTERVAL_MS) || 60 * 60 * 1000, // 1 hour
     maxAgeHours: Number(MEDIA_MAX_AGE_HOURS) || 24, // 24 hours
+  },
+  slack: {
+    webhookUrl: SLACK_WEBHOOK_URL || "",
   },
 };
 

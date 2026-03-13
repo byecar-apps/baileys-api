@@ -240,6 +240,30 @@ export class BaileysConnection {
     this.socket = null;
     this.reconnectCount = 0;
     this.onConnectionClose?.();
+    await this.notifySlackDisconnection();
+  }
+
+  private async notifySlackDisconnection() {
+    const slackWebhookUrl = config.slack.webhookUrl;
+    if (!slackWebhookUrl) {
+      return;
+    }
+    try {
+      await fetch(slackWebhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: `🔴 WhatsApp desconectado: ${this.phoneNumber}`,
+        }),
+      });
+      logger.info("[%s] [notifySlackDisconnection] Slack notified", this.phoneNumber);
+    } catch (error) {
+      logger.error(
+        "[%s] [notifySlackDisconnection] Failed to notify Slack: %s",
+        this.phoneNumber,
+        errorToString(error),
+      );
+    }
   }
 
   async logout() {

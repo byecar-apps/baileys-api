@@ -243,12 +243,30 @@ export class BaileysConnection {
   }
 
   private async notifySlackDisconnection(reason: string) {
+    logger.info(
+      "[%s] [notifySlackDisconnection] Called with reason: %s",
+      this.phoneNumber,
+      reason,
+    );
     const slackWebhookUrl = config.slack.webhookUrl;
+    logger.info(
+      "[%s] [notifySlackDisconnection] Slack webhook URL: %s",
+      this.phoneNumber,
+      slackWebhookUrl ? "configured" : "NOT CONFIGURED",
+    );
     if (!slackWebhookUrl) {
+      logger.warn(
+        "[%s] [notifySlackDisconnection] SLACK_WEBHOOK_URL not set, skipping notification",
+        this.phoneNumber,
+      );
       return;
     }
     try {
-      await fetch(slackWebhookUrl, {
+      logger.info(
+        "[%s] [notifySlackDisconnection] Sending to Slack...",
+        this.phoneNumber,
+      );
+      const response = await fetch(slackWebhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -256,9 +274,10 @@ export class BaileysConnection {
         }),
       });
       logger.info(
-        "[%s] [notifySlackDisconnection] Slack notified (reason: %s)",
+        "[%s] [notifySlackDisconnection] Slack response: %s %s",
         this.phoneNumber,
-        reason,
+        response.status,
+        response.statusText,
       );
     } catch (error) {
       logger.error(
@@ -463,7 +482,16 @@ export class BaileysConnection {
           : isDeviceRemoved
             ? "device_removed"
             : `unknown (${statusCode}: ${message})`;
+      logger.info(
+        "[%s] [handleConnectionUpdate] Will notify Slack with reason: %s",
+        this.phoneNumber,
+        disconnectReason,
+      );
       await this.notifySlackDisconnection(disconnectReason);
+      logger.info(
+        "[%s] [handleConnectionUpdate] Slack notification done, closing connection",
+        this.phoneNumber,
+      );
       await this.close();
     }
 

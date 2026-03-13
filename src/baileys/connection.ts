@@ -240,10 +240,9 @@ export class BaileysConnection {
     this.socket = null;
     this.reconnectCount = 0;
     this.onConnectionClose?.();
-    await this.notifySlackDisconnection();
   }
 
-  private async notifySlackDisconnection() {
+  private async notifySlackDisconnection(reason: string) {
     const slackWebhookUrl = config.slack.webhookUrl;
     if (!slackWebhookUrl) {
       return;
@@ -253,10 +252,14 @@ export class BaileysConnection {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text: `🔴 WhatsApp desconectado: ${this.phoneNumber}`,
+          text: `🔴 WhatsApp desconectado: ${this.phoneNumber} (motivo: ${reason})`,
         }),
       });
-      logger.info("[%s] [notifySlackDisconnection] Slack notified", this.phoneNumber);
+      logger.info(
+        "[%s] [notifySlackDisconnection] Slack notified (reason: %s)",
+        this.phoneNumber,
+        reason,
+      );
     } catch (error) {
       logger.error(
         "[%s] [notifySlackDisconnection] Failed to notify Slack: %s",
@@ -276,6 +279,7 @@ export class BaileysConnection {
         errorToString(error),
       );
     }
+    await this.notifySlackDisconnection("logout");
     await this.close();
   }
 
@@ -426,9 +430,18 @@ export class BaileysConnection {
       const error = lastDisconnect?.error as Boom;
       const statusCode = error?.output?.statusCode;
       const message = error?.output?.payload?.message || error.message;
-      const shouldReconnect =
-        statusCode !== DisconnectReason.loggedOut &&
-        message !== "QR refs attempts ended";
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+      const isQrExpired = message === "QR refs attempts ended";
+      const isDeviceRemoved = statusCode === 401;
+      const shouldReconnect = !isLoggedOut && !isQrExpired && !isDeviceRemoved;
+
+      logger.info(
+        "[%s] [handleConnectionUpdate] Connection closed (statusCode=%s, message=%s, shouldReconnect=%s)",
+        this.phoneNumber,
+        statusCode,
+        message,
+        shouldReconnect,
+      );
 
       if (shouldReconnect) {
         logger.debug(
@@ -442,6 +455,15 @@ export class BaileysConnection {
         this.connect();
         return;
       }
+
+      const disconnectReason = isLoggedOut
+        ? "logout"
+        : isQrExpired
+          ? "qr_expired"
+          : isDeviceRemoved
+            ? "device_removed"
+            : `unknown (${statusCode}: ${message})`;
+      await this.notifySlackDisconnection(disconnectReason);
       await this.close();
     }
 
@@ -528,13 +550,14 @@ export class BaileysConnection {
     this.sendToWebhook({ event: "messaging-history.set", data });
   }
 
-  private handleWrongPhoneNumber() {
+  private async handleWrongPhoneNumber() {
     this.sendToWebhook({
       event: "connection.update",
       data: { error: "wrong_phone_number" },
     });
     this.socket?.ev.removeAllListeners("connection.update");
-    this.logout();
+    await this.notifySlackDisconnection("wrong_phone_number");
+    await this.close();
   }
 
   private async handleReconnecting() {
@@ -544,6 +567,7 @@ export class BaileysConnection {
         "[%s] [handleReconnecting] Reconnect count exceeded 10, resetting connection",
         this.phoneNumber,
       );
+      await this.notifySlackDisconnection("reconnect_failed");
       await this.close();
       return;
     }

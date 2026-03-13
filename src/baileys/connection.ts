@@ -30,6 +30,7 @@ import type {
 import config from "@/config";
 import { asyncSleep } from "@/helpers/asyncSleep";
 import { errorToString } from "@/helpers/errorToString";
+import { notifySlackDisconnection as notifySlackDisconnectionHelper } from "@/helpers/notifySlackDisconnection";
 import logger, { baileysLogger, deepSanitizeObject } from "@/lib/logger";
 
 export class BaileysNotConnectedError extends Error {
@@ -606,6 +607,13 @@ export class BaileysConnection {
       awaitResponse?: boolean;
     },
   ) {
+    if (
+      payload.event === "connection.update" &&
+      (payload.data as { connection?: string })?.connection === "close"
+    ) {
+      await notifySlackDisconnectionHelper(this.phoneNumber, "disconnected");
+    }
+
     const sanitizedPayload = deepSanitizeObject(
       { ...payload },
       {

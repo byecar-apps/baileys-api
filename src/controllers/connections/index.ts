@@ -6,6 +6,7 @@ import {
   buildEditableMessageContent,
   buildMessageContent,
 } from "@/controllers/connections/helpers";
+import { notifySlackDisconnection } from "@/helpers/notifySlackDisconnection";
 import { authMiddleware } from "@/middlewares/auth";
 import {
   anyMessageContent,
@@ -487,6 +488,7 @@ const connectionsController = new Elysia({
 
       try {
         await baileys.logout(phoneNumber);
+        await notifySlackDisconnection(phoneNumber, "disconnected_by_api");
       } catch (e) {
         if (e instanceof BaileysNotConnectedError) {
           return new Response("Phone number not found", { status: 404 });

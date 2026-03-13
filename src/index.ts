@@ -39,6 +39,14 @@ app.listen(config.port, () => {
     ),
   );
 
+  if (config.slack.webhookUrl) {
+    logger.info("Slack disconnect notifications: enabled");
+  } else {
+    logger.warn(
+      "Slack disconnect notifications: disabled (set SLACK_WEBHOOK_URL to enable)",
+    );
+  }
+
   if (config.media.cleanupEnabled) {
     mediaCleanup.start();
   }

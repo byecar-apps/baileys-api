@@ -611,6 +611,10 @@ export class BaileysConnection {
       payload.event === "connection.update" &&
       (payload.data as { connection?: string })?.connection === "close"
     ) {
+      logger.info(
+        "[%s] [sendToWebhook] connection=close detected, notifying Slack",
+        this.phoneNumber,
+      );
       await notifySlackDisconnectionHelper(this.phoneNumber, "disconnected");
     }
 

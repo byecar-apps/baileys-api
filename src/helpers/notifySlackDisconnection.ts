@@ -7,13 +7,19 @@ export async function notifySlackDisconnection(
 ): Promise<void> {
   const slackWebhookUrl = config.slack.webhookUrl;
   if (!slackWebhookUrl) {
-    logger.debug(
-      "[%s] [notifySlackDisconnection] SLACK_WEBHOOK_URL not set, skipping",
+    logger.warn(
+      "[%s] [notifySlackDisconnection] SLACK_WEBHOOK_URL env not set - no Slack notification sent (reason: %s). Set SLACK_WEBHOOK_URL to receive alerts.",
       phoneNumber,
+      reason,
     );
     return;
   }
   try {
+    logger.info(
+      "[%s] [notifySlackDisconnection] Sending to Slack (reason: %s)",
+      phoneNumber,
+      reason,
+    );
     const response = await fetch(slackWebhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -21,15 +27,24 @@ export async function notifySlackDisconnection(
         text: `🔴 WhatsApp desconectado: ${phoneNumber} (motivo: ${reason})`,
       }),
     });
+    const body = await response.text();
+    if (!response.ok) {
+      logger.error(
+        "[%s] [notifySlackDisconnection] Slack returned %s: %s",
+        phoneNumber,
+        response.status,
+        body,
+      );
+      return;
+    }
     logger.info(
-      "[%s] [notifySlackDisconnection] Slack notified (reason: %s) status: %s",
+      "[%s] [notifySlackDisconnection] Slack OK (reason: %s)",
       phoneNumber,
       reason,
-      response.status,
     );
   } catch (error) {
     logger.error(
-      "[%s] [notifySlackDisconnection] Failed to notify Slack: %s",
+      "[%s] [notifySlackDisconnection] Failed: %s",
       phoneNumber,
       error instanceof Error ? error.message : String(error),
     );

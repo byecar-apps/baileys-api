@@ -1,9 +1,98 @@
+# VPN (Gluetun + Mullvad): tráfego do Baileys sai pelo VPN; Redis continua na rede interna.
+# De fora: use a URL que o Coolify gera. Na mesma rede Docker: http://gluetun:3025
+#
+# Variáveis obrigatórias:
+#   WIREGUARD_PRIVATE_KEY      - PrivateKey do arquivo .conf Mullvad
+#   WIREGUARD_ADDRESSES        - apenas o IPv4, ex: 10.67.152.85/32
+#   IP_ROTATION_INTERVAL_HOURS - horas entre trocas de IP (padrão: 8)
+#
+# Para escalar a 100+ números, use docker-compose.stack.yml como template
+# e suba uma stack por grupo de 10 números, cada uma com chave WireGuard diferente.
+
 version: "3"
 
 services:
+  gluetun:
+    image: qmcgaw/gluetun
+    restart: always
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "3025:3025"
+      # Porta interna do control server — não expor para fora
+      # acessível via network_mode dos outros containers
+    environment:
+      - VPN_SERVICE_PROVIDER=mullvad
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES}
+      - SERVER_COUNTRIES=Brazil
+      - SERVER_CITIES=${VPN_SERVER_CITY:-Sao Paulo}
+      - FIREWALL_OUTBOUND_SUBNETS=172.16.0.0/12,10.0.0.0/8,192.168.0.0/16
+      - DNS_KEEP_NAMESERVER=on
+      # Habilita a API HTTP de controle (usada pelo ip-rotator)
+      - HTTP_CONTROL_SERVER_PORT=8000
+      - HTTP_CONTROL_SERVER_LOG=off
+      # Atualiza lista de servidores Mullvad periodicamente
+      - SERVER_SELECTION_UPDATER_PERIOD=12h
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "wget -qO- https://ipinfo.io/ip"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - coolify
+
+  # Rotaciona o IP de saída periodicamente reconectando o túnel WireGuard.
+  # Mullvad tem ~10 servidores em SP — cada reconexão pode pegar um IP diferente.
+  ip-rotator:
+    image: alpine
+    network_mode: "service:gluetun"
+    restart: always
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - IP_ROTATION_INTERVAL_HOURS=${IP_ROTATION_INTERVAL_HOURS:-8}
+    command:
+      - sh
+      - -c
+      - |
+        apk add --no-cache curl > /dev/null 2>&1
+
+        INTERVAL_SECS=$$(( $${IP_ROTATION_INTERVAL_HOURS:-8} * 3600 ))
+
+        # Jitter inicial: cada stack espera um offset aleatório antes da primeira rotação.
+        # Garante que stacks diferentes não rotem IP ao mesmo tempo, evitando
+        # pico de 100 reconexões simultâneas no WhatsApp.
+        JITTER_SECS=$$(awk "BEGIN{srand(); print int(rand() * 1800)}")
+        echo "[ip-rotator] Primeiro ciclo em $$(( INTERVAL_SECS + JITTER_SECS ))s (intervalo: $${IP_ROTATION_INTERVAL_HOURS:-8}h + jitter: $${JITTER_SECS}s)"
+        sleep $$(( INTERVAL_SECS + JITTER_SECS ))
+
+        while true; do
+          echo "[ip-rotator] Rotacionando IP..."
+          curl -sf -X PUT http://localhost:8000/v1/vpn/status \
+            -H "Content-Type: application/json" \
+            -d '{"status":"stopped"}' && sleep 5
+          curl -sf -X PUT http://localhost:8000/v1/vpn/status \
+            -H "Content-Type: application/json" \
+            -d '{"status":"running"}'
+          echo "[ip-rotator] Reconexão solicitada — novo IP em ~15s"
+
+          # Próximo ciclo com jitter leve para evitar sincronismo entre stacks
+          NEXT_JITTER=$$(awk "BEGIN{srand(); print int(rand() * 600)}")
+          sleep $$(( INTERVAL_SECS + NEXT_JITTER ))
+        done
+
   baileys-api:
     image: "ghcr.io/fazer-ai/baileys-api:latest"
     pull_policy: always
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
     volumes:
       - "storage:/app/storage"
     environment:
@@ -14,9 +103,18 @@ services:
       - BAILEYS_LOG_LEVEL=${BAILEYS_LOG_LEVEL:-error}
       - BAILEYS_PROVIDER_DEFAULT_API_KEY=${SERVICE_PASSWORD_64_DEFAULTAPIKEY}
       - MEDIA_CLEANUP_ENABLED=${MEDIA_CLEANUP_ENABLED:-true}
-            - MEDIA_CLEANUP_INTERVAL_MS=${MEDIA_CLEANUP_INTERVAL_MS:-3600000}
+      - MEDIA_CLEANUP_INTERVAL_MS=${MEDIA_CLEANUP_INTERVAL_MS:-3600000}
       - MEDIA_MAX_AGE_HOURS=${MEDIA_MAX_AGE_HOURS:-24}
-      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - IGNORE_GROUP_MESSAGES=${IGNORE_GROUP_MESSAGES:-false}
+      - BAILEYS_SYNC_FULL_HISTORY_DEFAULT=${BAILEYS_SYNC_FULL_HISTORY_DEFAULT:-false}
+      # Anti-ban: comportamento humano
+      - HUMAN_BEHAVIOR_ENABLED=${HUMAN_BEHAVIOR_ENABLED:-true}
+      - HUMAN_BEHAVIOR_MAX_MESSAGES_PER_MINUTE=${HUMAN_BEHAVIOR_MAX_MESSAGES_PER_MINUTE:-10}
+      - HUMAN_BEHAVIOR_MAX_MESSAGES_PER_JID_PER_MINUTE=${HUMAN_BEHAVIOR_MAX_MESSAGES_PER_JID_PER_MINUTE:-4}
+      - HUMAN_BEHAVIOR_OFFLINE_WINDOW_ENABLED=${HUMAN_BEHAVIOR_OFFLINE_WINDOW_ENABLED:-true}
+      - HUMAN_BEHAVIOR_STARTUP_STAGGER_DELAY_MS=${HUMAN_BEHAVIOR_STARTUP_STAGGER_DELAY_MS:-3000}
+      # Rotação de IP ao detectar ban — aponta pro Gluetun via localhost (mesmo network_mode)
+      - GLUETUN_CONTROL_URL=http://localhost:8000
     command:
       - sh
       - "-c"
@@ -29,3 +127,11 @@ services:
       interval: 20s
       timeout: 20s
       retries: 10
+
+volumes:
+  storage:
+
+networks:
+  coolify:
+    external: true
+    name: coolify

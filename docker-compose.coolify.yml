@@ -21,6 +21,14 @@ services:
       - "3025:3025"
       # Porta interna do control server — não expor para fora
       # acessível via network_mode dos outros containers
+    # O baileys-api usa network_mode: service:gluetun, então não tem IP próprio
+    # na rede coolify. O Traefik precisa rotear pelo gluetun na porta 3025.
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.baileys-api.rule=Host(`${SERVICE_FQDN_BAILEYS_API}`)
+      - traefik.http.routers.baileys-api.entrypoints=http,https
+      - traefik.http.routers.baileys-api.tls.certresolver=letsencrypt
+      - traefik.http.services.baileys-api.loadbalancer.server.port=3025
     environment:
       - VPN_SERVICE_PROVIDER=mullvad
       - VPN_TYPE=wireguard

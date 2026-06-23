@@ -489,6 +489,16 @@ export class BaileysConnection {
         if (!this.socket) {
           return;
         }
+        // Exponential backoff: gives the VPN/network time to recover before retrying.
+        // Cap at 30s so we don't wait too long on transient failures.
+        const backoffMs = Math.min(1000 * 2 ** this.reconnectCount, 30000);
+        logger.debug(
+          "[%s] [handleConnectionUpdate] Backoff %dms before reconnect (attempt %d)",
+          this.phoneNumber,
+          backoffMs,
+          this.reconnectCount,
+        );
+        await asyncSleep(backoffMs);
         this.socket = null;
         this.connect();
         return;
@@ -596,16 +606,24 @@ export class BaileysConnection {
     this.reconnectCount += 1;
     if (this.reconnectCount > 10) {
       logger.warn(
-        "[%s] [handleReconnecting] Reconnect count exceeded 10, dropping connection without clearing auth state",
+        "[%s] [handleReconnecting] Reconnect count exceeded 10, scheduling retry in 5 minutes",
         this.phoneNumber,
       );
       await this.notifySlackDisconnection("reconnect_failed");
-      // NOTE: Do NOT call close() here — that would wipe the Redis auth state and force a new QR scan.
-      // Instead just tear down the socket so the session can be re-connected via the API without re-scanning.
+      // NOTE: Do NOT call close() — that wipes Redis auth state and forces a new QR scan.
+      // Keep the connection in the handler map (socket=null) and retry after a cooldown.
+      // If the API receives a connect() call while in this state, BaileysNotConnectedError
+      // will be caught by the handler which will create a fresh connection normally.
       this.clearAuthState = null;
       this.socket = null;
       this.reconnectCount = 0;
-      this.onConnectionClose?.();
+      setTimeout(() => {
+        logger.info(
+          "[%s] [handleReconnecting] Retrying connection after reconnect_failed cooldown",
+          this.phoneNumber,
+        );
+        this.connect();
+      }, 5 * 60 * 1000);
       return;
     }
     this.sendToWebhook({

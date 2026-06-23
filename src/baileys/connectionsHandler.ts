@@ -16,7 +16,10 @@ import type {
   MessageKeyWithId,
   SendReceiptsOptions,
 } from "@/baileys/types";
+import { asyncSleep } from "@/helpers/asyncSleep";
 import logger from "@/lib/logger";
+
+const STARTUP_STAGGER_DELAY_MS = 500;
 
 export class BaileysConnectionsHandler {
   private connections: Record<string, BaileysConnection> = {};
@@ -38,8 +41,10 @@ export class BaileysConnectionsHandler {
       savedConnections.map(({ id }) => id),
     );
 
-    // TODO: Handle thundering herd issue.
-    for (const { id, metadata } of savedConnections) {
+    for (const [index, { id, metadata }] of savedConnections.entries()) {
+      if (index > 0) {
+        await asyncSleep(STARTUP_STAGGER_DELAY_MS);
+      }
       const connection = new BaileysConnection(id, {
         onConnectionClose: () => {
           delete this.connections[id];

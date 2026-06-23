@@ -26,6 +26,7 @@ const {
   MEDIA_MAX_AGE_HOURS,
   BAILEYS_LISTEN_TO_EVENTS,
   SLACK_WEBHOOK_URL,
+  WEBHOOK_MIN_INTERVAL_MS,
 } = process.env;
 
 const config = {
@@ -82,6 +83,7 @@ const config = {
         ? Number(WEBHOOK_RETRY_POLICY_BACKOFF_FACTOR)
         : 3,
     },
+    minIntervalMs: Number(WEBHOOK_MIN_INTERVAL_MS) || 0,
   },
   corsOrigin: CORS_ORIGIN || "localhost",
   media: {

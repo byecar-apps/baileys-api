@@ -103,6 +103,10 @@ export class BaileysConnection {
     null;
   private reconnectCount = 0;
   private cachedClientVersion: WAVersion | undefined = undefined;
+  private webhookQueue: Array<
+    [BaileysConnectionWebhookPayload, { awaitResponse?: boolean } | undefined]
+  > = [];
+  private webhookDraining = false;
 
   constructor(phoneNumber: string, options: BaileysConnectionOptions) {
     this.phoneNumber = phoneNumber;
@@ -237,7 +241,7 @@ export class BaileysConnection {
         return;
       }
 
-      this.socket?.ev.on(event, (data) => this.sendToWebhook({ event, data }));
+      this.socket?.ev.on(event, (data) => this.enqueueWebhook({ event, data }));
     });
   }
 
@@ -505,7 +509,7 @@ export class BaileysConnection {
       }
 
       await this.close();
-      this.sendToWebhook({ event: "connection.update", data });
+      this.enqueueWebhook({ event: "connection.update", data });
       return;
     }
 
@@ -535,7 +539,7 @@ export class BaileysConnection {
       this.reconnectCount = 0;
     }
 
-    this.sendToWebhook({
+    this.enqueueWebhook({
       event: "connection.update",
       data,
     });
@@ -554,11 +558,11 @@ export class BaileysConnection {
       payload.extra = { media };
     }
 
-    this.sendToWebhook(payload);
+    this.enqueueWebhook(payload);
   }
 
   private handleMessagesUpdate(data: BaileysEventMap["messages.update"]) {
-    this.sendToWebhook(
+    this.enqueueWebhook(
       {
         event: "messages.update",
         data,
@@ -572,7 +576,7 @@ export class BaileysConnection {
   private handleMessageReceiptUpdate(
     data: BaileysEventMap["message-receipt.update"],
   ) {
-    this.sendToWebhook({
+    this.enqueueWebhook({
       event: "message-receipt.update",
       data,
     });
@@ -589,11 +593,11 @@ export class BaileysConnection {
     // FIXME: Downloads are failing heavily right now. Under investigation.
     // await downloadMediaFromMessages(data.messages);
 
-    this.sendToWebhook({ event: "messaging-history.set", data });
+    this.enqueueWebhook({ event: "messaging-history.set", data });
   }
 
   private async handleWrongPhoneNumber() {
-    this.sendToWebhook({
+    this.enqueueWebhook({
       event: "connection.update",
       data: { error: "wrong_phone_number" },
     });
@@ -629,10 +633,39 @@ export class BaileysConnection {
       );
       return;
     }
-    this.sendToWebhook({
+    this.enqueueWebhook({
       event: "connection.update",
       data: { connection: "reconnecting" as WAConnectionState },
     });
+  }
+
+  private enqueueWebhook(
+    payload: BaileysConnectionWebhookPayload,
+    options?: { awaitResponse?: boolean },
+  ) {
+    const minIntervalMs = config.webhook.minIntervalMs;
+    if (minIntervalMs === 0) {
+      void this.sendToWebhook(payload, options);
+      return;
+    }
+    this.webhookQueue.push([payload, options]);
+    if (!this.webhookDraining) {
+      void this.drainWebhookQueue(minIntervalMs);
+    }
+  }
+
+  private async drainWebhookQueue(minIntervalMs: number) {
+    this.webhookDraining = true;
+    while (this.webhookQueue.length > 0) {
+      const item = this.webhookQueue.shift();
+      if (!item) break;
+      const [payload, options] = item;
+      await this.sendToWebhook(payload, options);
+      if (this.webhookQueue.length > 0) {
+        await asyncSleep(minIntervalMs);
+      }
+    }
+    this.webhookDraining = false;
   }
 
   private async sendToWebhook(

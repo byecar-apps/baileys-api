@@ -27,6 +27,7 @@ const {
   BAILEYS_LISTEN_TO_EVENTS,
   SLACK_WEBHOOK_URL,
   WEBHOOK_MIN_INTERVAL_MS,
+  WEBHOOK_DRY_RUN,
 } = process.env;
 
 const config = {
@@ -84,6 +85,7 @@ const config = {
         : 3,
     },
     minIntervalMs: Number(WEBHOOK_MIN_INTERVAL_MS) || 0,
+    dryRun: WEBHOOK_DRY_RUN === "true",
   },
   corsOrigin: CORS_ORIGIN || "localhost",
   media: {

@@ -779,6 +779,16 @@ export class BaileysConnection {
       awaitResponse?: boolean;
     },
   ): Promise<{ response?: Response; error?: Error }> {
+    if (config.webhook.dryRun) {
+      logger.info(
+        "[%s] [sendPayloadToWebhook] [DRY RUN] event=%s payload=%o",
+        this.phoneNumber,
+        payload.event,
+        payload,
+      );
+      return { response: new Response(null, { status: 200 }) };
+    }
+
     try {
       const response = await fetch(this.webhookUrl, {
         method: "POST",

@@ -3,27 +3,33 @@
  * via the baileys-api HTTP endpoint, reusing the stored metadata (webhookUrl,
  * webhookVerifyToken, etc.) so no manual input is needed.
  *
- * Usage:
- *   BAILEYS_API_URL=https://your-api.com API_KEY=your-key bun scripts/reconnect-all.ts
+ * Picks up env vars already set in the container — no manual config needed.
+ * Run inside the baileys-api container:
  *
- * Optional env vars:
- *   REDIS_URL        — defaults to redis://localhost:6379
- *   REDIS_PASSWORD   — optional
+ *   bun scripts/reconnect-all.ts
+ *
+ * Optional overrides:
+ *   BAILEYS_API_URL  — defaults to http://localhost:3025 (internal)
+ *   API_KEY          — defaults to BAILEYS_PROVIDER_DEFAULT_API_KEY
  *   DELAY_MS         — ms between each reconnect call (default: 500)
  *   DRY_RUN=true     — print what would be called without actually calling
  */
 
 import { createClient } from "redis";
 
-const BAILEYS_API_URL = process.env.BAILEYS_API_URL;
-const API_KEY = process.env.API_KEY;
+const BAILEYS_API_URL =
+  process.env.BAILEYS_API_URL ?? "http://localhost:3025";
+const API_KEY =
+  process.env.API_KEY ?? process.env.BAILEYS_PROVIDER_DEFAULT_API_KEY;
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const REDIS_PASSWORD = process.env.REDIS_PASSWORD;
 const DELAY_MS = Number(process.env.DELAY_MS ?? 500);
 const DRY_RUN = process.env.DRY_RUN === "true";
 
-if (!BAILEYS_API_URL || !API_KEY) {
-  console.error("Missing required env vars: BAILEYS_API_URL, API_KEY");
+if (!API_KEY) {
+  console.error(
+    "Missing API key — set API_KEY or BAILEYS_PROVIDER_DEFAULT_API_KEY",
+  );
   process.exit(1);
 }
 

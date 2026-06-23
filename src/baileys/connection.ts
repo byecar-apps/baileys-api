@@ -14,6 +14,7 @@ import makeWASocket, {
   type WAConnectionState,
   type WAMessage,
   type WAPresence,
+  type WAVersion,
 } from "@whiskeysockets/baileys";
 import { toDataURL } from "qrcode";
 import { downloadMediaFromMessages } from "@/baileys/helpers/downloadMediaFromMessages";
@@ -101,6 +102,7 @@ export class BaileysConnection {
   private clearOnlinePresenceTimeout: ReturnType<typeof setTimeout> | null =
     null;
   private reconnectCount = 0;
+  private cachedClientVersion: WAVersion | undefined = undefined;
 
   constructor(phoneNumber: string, options: BaileysConnectionOptions) {
     this.phoneNumber = phoneNumber;
@@ -113,8 +115,7 @@ export class BaileysConnection {
     this.isReconnect = !!options.isReconnect;
     // TODO(v2): Change default to false.
     this.includeMedia = options.includeMedia ?? true;
-    // NOTE: Always sync full history regardless of request options.
-    this.syncFullHistory = true;
+    this.syncFullHistory = config.baileys.syncFullHistory;
   }
 
   // biome-ignore lint/suspicious/noExplicitAny: Typing this wrapper is not trivial.
@@ -169,14 +170,19 @@ export class BaileysConnection {
       browser: Browsers.windows(this.clientName),
       syncFullHistory: this.syncFullHistory,
       shouldIgnoreJid,
-      version: await fetchBaileysClientVersion().catch((error) => {
-        logger.error(
-          "[%s] [fetchBaileysVersion] Failed to fetch latest WhatsApp Web version, falling back to internal version. %s",
-          this.phoneNumber,
-          errorToString(error),
-        );
-        return undefined;
-      }),
+      version: await (async () => {
+        if (this.cachedClientVersion) return this.cachedClientVersion;
+        const v = await fetchBaileysClientVersion().catch((error) => {
+          logger.error(
+            "[%s] [fetchBaileysVersion] Failed to fetch latest WhatsApp Web version, falling back to internal version. %s",
+            this.phoneNumber,
+            errorToString(error),
+          );
+          return undefined;
+        });
+        if (v) this.cachedClientVersion = v;
+        return v;
+      })(),
     };
 
     try {
@@ -454,12 +460,9 @@ export class BaileysConnection {
       const isLoggedOut = statusCode === DisconnectReason.loggedOut;
       const isQrExpired = message === "QR refs attempts ended";
       const isDeviceRemoved = statusCode === 401;
-      // NOTE: If we can't determine the status code (e.g. error serialized empty), treat as permanent disconnect
-      const shouldReconnect =
-        statusCode !== undefined &&
-        !isLoggedOut &&
-        !isQrExpired &&
-        !isDeviceRemoved;
+      // NOTE: Treat undefined statusCode (empty/serialized error) as reconnectable — it indicates a
+      // network drop, not a deliberate logout. Calling close() here would wipe the Redis auth state.
+      const shouldReconnect = !isLoggedOut && !isQrExpired && !isDeviceRemoved;
 
       const disconnectReason = isLoggedOut
         ? "logout"
@@ -481,6 +484,11 @@ export class BaileysConnection {
           lastDisconnect ?? {},
         );
         await this.handleReconnecting();
+        // NOTE: handleReconnecting() clears this.socket when it gives up (count > 10).
+        // In that case the connection was already torn down — don't create a new orphaned socket.
+        if (!this.socket) {
+          return;
+        }
         this.socket = null;
         this.connect();
         return;
@@ -588,11 +596,16 @@ export class BaileysConnection {
     this.reconnectCount += 1;
     if (this.reconnectCount > 10) {
       logger.warn(
-        "[%s] [handleReconnecting] Reconnect count exceeded 10, resetting connection",
+        "[%s] [handleReconnecting] Reconnect count exceeded 10, dropping connection without clearing auth state",
         this.phoneNumber,
       );
       await this.notifySlackDisconnection("reconnect_failed");
-      await this.close();
+      // NOTE: Do NOT call close() here — that would wipe the Redis auth state and force a new QR scan.
+      // Instead just tear down the socket so the session can be re-connected via the API without re-scanning.
+      this.clearAuthState = null;
+      this.socket = null;
+      this.reconnectCount = 0;
+      this.onConnectionClose?.();
       return;
     }
     this.sendToWebhook({

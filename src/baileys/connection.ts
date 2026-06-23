@@ -617,13 +617,16 @@ export class BaileysConnection {
       this.clearAuthState = null;
       this.socket = null;
       this.reconnectCount = 0;
-      setTimeout(() => {
-        logger.info(
-          "[%s] [handleReconnecting] Retrying connection after reconnect_failed cooldown",
-          this.phoneNumber,
-        );
-        this.connect();
-      }, 5 * 60 * 1000);
+      setTimeout(
+        () => {
+          logger.info(
+            "[%s] [handleReconnecting] Retrying connection after reconnect_failed cooldown",
+            this.phoneNumber,
+          );
+          this.connect();
+        },
+        5 * 60 * 1000,
+      );
       return;
     }
     this.sendToWebhook({

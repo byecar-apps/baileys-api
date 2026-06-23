@@ -17,8 +17,7 @@
 
 import { createClient } from "redis";
 
-const BAILEYS_API_URL =
-  process.env.BAILEYS_API_URL ?? "http://localhost:3025";
+const BAILEYS_API_URL = process.env.BAILEYS_API_URL ?? "http://localhost:3025";
 const API_KEY =
   process.env.API_KEY ?? process.env.BAILEYS_PROVIDER_DEFAULT_API_KEY;
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
